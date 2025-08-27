@@ -13,7 +13,10 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from youtube_transcript_api import YouTubeTranscriptApi
 from typing import List
+from langchain.memory import ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage
 import re
+
 
 class SentenceTransformerEmbeddings(Embeddings):
     def __init__(self, model_name: str):
@@ -46,7 +49,7 @@ def create_vector_db(video_url):
         
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.split_documents([document])
-        
+        embeddings = SentenceTransformerEmbeddings('all-MiniLM-L6-v2')
         vector_db = FAISS.from_documents(chunks, embeddings)
         return vector_db
         
@@ -54,30 +57,32 @@ def create_vector_db(video_url):
         print(f"Error loading transcript: {e}")
         raise
 
-embeddings = SentenceTransformerEmbeddings('all-MiniLM-L6-v2')
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-def get_response_from_query(db, query, k=4):
-    retriever = db.as_retriever(search_kwargs={"k": k})
+
+def get_rag_chain_with_memory(db: FAISS) -> RunnablePassthrough:
+    retriever = db.as_retriever(search_kwargs={"k": 4})
     llm = ChatGroq(model="llama3-8b-8192", api_key=GROQ_API_KEY)
     prompt_template = PromptTemplate(
-        input_variables=["context", "question"],
+        input_variables=["chat_history","context","question"],
         template="""
         You are a helpful YouTube assistant that can answer questions about the video based on the provided transcript.
+        Current conversation:
+        {chat_history}
         Answer the following question: {question}
-        By using the following context from the video transcript:{context}
-        Answer the user's question with the help of the provided video transcript only.
+        By using the following context from the video transcript:
+        {context}
+        Answer the user's question with the help of the provided video transcript and chat history only.
         If the answer is not contained in the provided context, say "The video does not have information on this topic."
-        Do not make up any information. Your answers should be detailed."""
-    )
+        Do not make up any information. Your answers should be detailed.
+        """)
     
     rag_chain = (
-        {"context": retriever, "question": RunnablePassthrough()}
+        {"context": retriever, "question": RunnablePassthrough(), "chat_history": RunnablePassthrough()}
         | prompt_template
         | llm
         | StrOutputParser()
     )
+    return rag_chain
 
-    response = rag_chain.invoke(query)
-    
-    return response
