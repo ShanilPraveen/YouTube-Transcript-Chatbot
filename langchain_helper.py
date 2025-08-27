@@ -13,8 +13,6 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from youtube_transcript_api import YouTubeTranscriptApi
 from typing import List
-from langchain.memory import ConversationBufferMemory
-from langchain_core.messages import HumanMessage, AIMessage
 import re
 
 
@@ -61,7 +59,7 @@ def create_vector_db(video_url):
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
-def get_rag_chain_with_memory(db: FAISS) -> RunnablePassthrough:
+def get_rag_chain_with_memory(db):
     retriever = db.as_retriever(search_kwargs={"k": 4})
     llm = ChatGroq(model="llama3-8b-8192", api_key=GROQ_API_KEY)
     prompt_template = PromptTemplate(
